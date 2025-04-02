@@ -1,0 +1,45 @@
+# Archivos de entorno
+.env
+
+# Archivos de logs
+*.log
+booking_bot.log
+
+# Archivos de estructura web
+*.html
+page_source.html
+after_login.html
+alquileres_page.html
+login_page.html
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de IDE
+.idea/
+.vscode/
+*.swp
+*.swo 
