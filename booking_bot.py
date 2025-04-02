@@ -11,6 +11,7 @@ import schedule
 import logging
 import platform
 from selenium.webdriver.support.select import Select
+from selenium.webdriver.common.keys import Keys
 
 # Configurar logging
 logging.basicConfig(
@@ -78,6 +79,152 @@ class RinconadaBookingBot:
             self.logger.error(f"Error al aceptar cookies: {str(e)}")
             # No lanzamos la excepción para continuar con el proceso
 
+    def select_date_and_time(self):
+        """Selects the date and time for the booking"""
+        try:
+            # Wait for the date input to be present
+            date_input = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.ID, "se4"))
+            )
+            
+            # Set the date using JavaScript with more robust event triggering
+            self.driver.execute_script("""
+                var dateInput = document.getElementById('se4');
+                dateInput.value = '10/04/2024';
+                
+                // Trigger multiple events to ensure the datepicker updates
+                ['change', 'input', 'blur'].forEach(function(eventType) {
+                    var event = new Event(eventType, { bubbles: true });
+                    dateInput.dispatchEvent(event);
+                });
+                
+                // Force jQuery datepicker to update if it exists
+                if (jQuery && jQuery.datepicker) {
+                    jQuery('#se4').datepicker('setDate', '10/04/2024');
+                }
+            """)
+            
+            # Wait a moment for the datepicker to update
+            time.sleep(3)
+            
+            # Get the current value to verify
+            current_value = self.driver.execute_script("return document.getElementById('se4').value;")
+            logging.info(f"Date input value after setting: {current_value}")
+            
+            # Wait for the search button and make sure it's visible
+            search_button = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.ID, "botonbuscar"))
+            )
+            
+            # Scroll the button into view
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", search_button)
+            time.sleep(2)
+            
+            # Click using JavaScript to ensure the click happens
+            self.driver.execute_script("arguments[0].click();", search_button)
+            
+            # Wait longer for the schedule table to update
+            time.sleep(5)
+            
+            # Save the HTML of the page for analysis
+            with open("horarios_page.html", "w", encoding="utf-8") as f:
+                f.write(self.driver.page_source)
+            
+            # Find available time slots
+            available_slots = self.driver.find_elements(By.CLASS_NAME, "fondoVerde")
+            logging.info(f"Found {len(available_slots)} available time slots")
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error selecting date and time: {str(e)}")
+            return False
+
+    def select_time_and_book(self):
+        """Select an available time slot and click the reserve button"""
+        try:
+            # Wait for the schedule table to load
+            table = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "table"))
+            )
+            
+            # Wait for available slots and get them
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "fondoVerde"))
+            )
+            available_slots = self.driver.find_elements(By.CLASS_NAME, "fondoVerde")
+            logging.info(f"Found {len(available_slots)} available time slots")
+            
+            if not available_slots:
+                logging.error("No available time slots found")
+                return False
+            
+            # Get all slot times for logging
+            for slot in available_slots:
+                slot_text = slot.text if slot.text else "No text"
+                slot_id = slot.get_attribute("id") if slot.get_attribute("id") else "No ID"
+                logging.info(f"Available slot - Text: {slot_text}, ID: {slot_id}")
+            
+            # Select the first available slot
+            time_slot = available_slots[0]
+            
+            # Scroll to the time slot
+            self.driver.execute_script("arguments[0].scrollIntoView({ behavior: 'smooth', block: 'center' });", time_slot)
+            time.sleep(3)  # Wait for scroll to complete
+            
+            # Try to click using different methods
+            try:
+                # First try: Direct click
+                time_slot.click()
+            except Exception as e1:
+                logging.info(f"Direct click failed: {str(e1)}, trying JavaScript click")
+                try:
+                    # Second try: JavaScript click
+                    self.driver.execute_script("arguments[0].click();", time_slot)
+                except Exception as e2:
+                    logging.info(f"JavaScript click failed: {str(e2)}, trying Actions chain")
+                    # Third try: Actions chain
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(time_slot).click().perform()
+            
+            time.sleep(2)  # Wait after clicking
+            
+            # Wait for and find the reserve button
+            try:
+                reserve_button = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "botonreservar"))
+                )
+                
+                # Scroll to the reserve button
+                self.driver.execute_script("arguments[0].scrollIntoView({ behavior: 'smooth', block: 'center' });", reserve_button)
+                time.sleep(2)
+                
+                # Try to click the reserve button using different methods
+                try:
+                    # First try: Direct click
+                    reserve_button.click()
+                except Exception as e1:
+                    logging.info(f"Direct click on reserve failed: {str(e1)}, trying JavaScript")
+                    try:
+                        # Second try: JavaScript click
+                        self.driver.execute_script("arguments[0].click();", reserve_button)
+                    except Exception as e2:
+                        logging.info(f"JavaScript click on reserve failed: {str(e2)}, trying Actions")
+                        # Third try: Actions chain
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(reserve_button).click().perform()
+                
+                logging.info("Successfully clicked reserve button")
+                return True
+                
+            except Exception as e:
+                logging.error(f"Error with reserve button: {str(e)}")
+                return False
+            
+        except Exception as e:
+            logging.error(f"Error selecting time and booking: {str(e)}")
+            return False
+
     def navigate_to_booking(self):
         """Navega al menú de alquileres y selecciona la actividad e instalación"""
         try:
@@ -128,10 +275,11 @@ class RinconadaBookingBot:
             Select(instalacion_select).select_by_value("05110100")  # FUTBOL 7 ARTIFICIAL
             time.sleep(2)  # Esperar a que se cargue la tabla de horarios
             
-            # Esperar a que se cargue la tabla de horarios
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "fondoVerde"))
-            )
+            # Seleccionar la fecha
+            self.select_date_and_time()
+            
+            # Seleccionar la hora y hacer la reserva
+            self.select_time_and_book()
             
             self.logger.info("Navegación completada correctamente")
             return True
